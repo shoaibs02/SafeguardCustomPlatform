@@ -1,0 +1,303 @@
+{
+  "Id": "CustomFlickr",
+  "BackEnd": "Scriptable",
+  "Meta": {
+    "Author": "Shoaibanwar Shaikh, One Identity",
+    "ScriptVersion": "1.0",
+    "Last Updated": "2024-04-03",
+    "Description": "Platform script to support Flickr web application, this is tested with SPP version 7.5 and above."
+  },
+  "CheckPassword": {
+    "Parameters": [
+      { "Timeout": { "Type": "Integer", "Required": false, "DefaultValue": 30 } },
+      { "AccountUserName": { "Type": "String", "Required": true } },
+      { "AccountPassword": { "Type": "Secret", "Required": true } },
+      { "AssetName": { "Type": "String", "Required": false, "DefaultValue": "Flickr" } },
+      { "HttpProxyAddress": { "Type": "String", "Description": "HTTP Proxy Address", "Required": false } },
+      { "HttpProxyPort": { "Type": "String", "Description": "HTTP Proxy Port", "Required": false } },
+      { "HttpProxyUserName": { "Type": "String", "Description": "HTTP Proxy UserName", "Required": false } },
+      { "HttpProxyPassword": { "Type": "Secret", "Description": "HTTP Proxy Password", "Required": false } }
+    ],
+    "Do": [
+      { "Status": { "Type": "Checking", "Percent": 10, "Message": { "Name": "VerifyingPassword" } } },
+      { "Function": { "Name": "CheckAccountLogin", "Parameters": ["%AccountUserName%", "%AccountPassword%"], "ResultVariable": "IsLoggedIn" } },
+      { "Return": { "Value": "%IsLoggedIn%" } }
+    ]
+  },
+  "ChangePassword": {
+    "Parameters": [
+      { "Timeout": { "Type": "Integer", "Required": false, "DefaultValue": 30 } },
+      { "AccountUserName": { "Type": "String", "Required": true } },
+      { "AccountPassword": { "Type": "Secret", "Required": true } },
+      { "NewPassword": { "Type": "Secret", "Required": true } },
+      { "AssetName": { "Type": "String", "Required": false, "DefaultValue": "Flickr" } },
+      { "HttpProxyAddress": { "Type": "String", "Description": "HTTP Proxy Address", "Required": false } },
+      { "HttpProxyPort": { "Type": "String", "Description": "HTTP Proxy Port", "Required": false } },
+      { "HttpProxyUserName": { "Type": "String", "Description": "HTTP Proxy UserName", "Required": false } },
+      { "HttpProxyPassword": { "Type": "Secret", "Description": "HTTP Proxy Password", "Required": false } }
+    ],
+    "Do": [
+      { "Status": { "Type": "Changing", "Percent": 20, "Message": { "Name": "ChangingPassword", "Parameters": ["%AccountUserName%"] } } },
+      {
+        "Condition": {
+          "If": "AccountPassword.Equals(NewPassword)",
+          "Then": [
+            { "Status": { "Type": "Changing", "Percent": 80, "Message": { "Name": "CurrentAndNewPasswordsAreIdentical", "Parameters": ["%AccountUserName%"] } } },
+            { "Log": { "Text": "Current and new password are identical" } },
+            { "Return": { "Value": false } }
+          ]
+        }
+      },
+      { "Status": { "Type": "Changing", "Percent": 20, "Message": { "Name": "LoggingInToService" } } },
+      { "Function": { "Name": "Login", "Parameters": ["%AccountUserName%", "%AccountPassword%"], "ResultVariable": "LoginResult" } },
+      {
+        "Condition": {
+          "If": "!LoginResult",
+          "Then": {
+            "Do": [
+              { "Status": { "Type": "Changing", "Percent": 70, "Message": { "Name": "LoggingInWithAccountFailed", "Parameters": ["%AssetName%", "%AccountUserName%"] } } },
+              { "Return": { "Value": false } }
+            ]
+          }
+        }
+      },
+      {
+        "Try": {
+          "Do": [
+            { "Function": { "Name": "ChangeUserPassword", "ResultVariable": "CheckResult" } },
+            { "Return": { "Value": "%CheckResult%" } }
+          ],
+          "Catch": [{ "Throw": { "Value": "Error changing password" } }]
+        }
+      }
+    ]
+  },
+  "Functions": [
+    {
+      "Name": "CheckAccountLogin",
+      "Parameters": [ { "UserName": { "Type": "String" } }, { "Password": { "Type": "Secret" } } ],
+      "Do": [
+        { "Status": { "Type": "Checking", "Percent": 20, "Message": { "Name": "LoggingInToService", "Parameters": ["%AssetName%", "%UserName%"] } } },
+        { "Function": { "Name": "Login", "Parameters": ["%UserName%", "%Password%"], "ResultVariable": "LoginResult" } },
+        {
+          "Condition": {
+            "If": "!LoginResult",
+            "Then": {
+              "Do": [
+                { "Log": { "Text": "Unsuccessful Login" } },
+                { "Return": { "Value": "%LoginResult%" } }
+              ]
+            }
+          }
+        },
+        { "Return": { "Value": "%LoginResult%" } }
+      ]
+    },
+    {
+      "Name": "Login",
+      "Parameters": [ { "UserName": { "Type": "string" } }, { "Password": { "Type": "secret" } } ],
+      "Do": [
+        {
+          "SetItem": {
+            "Name": "AuthRequestBody",
+            "Value": {
+              "AuthFlow": "USER_PASSWORD_AUTH", "ClientId": "3ck15a1ov4f0d3o97vs3tbjb52",
+              "AuthParameters": {
+                "USERNAME": "%UserName%",
+                "PASSWORD": "%Password%"
+              },
+              "ClientMetadata": {}
+            }
+          }
+        },
+        { "NewHttpRequest": { "ObjectName": "Global:SystemRequest" } },
+        {
+          "Headers": {
+            "RequestObjectName": "SystemRequest",
+            "AddHeaders": {
+              "Cache-Control": "no-cache",
+              "ContentType": "application/x-amz-json-1.1",
+              "ContentLength": "500",
+              "Host": "cognito-idp.us-east-1.amazonaws.com",
+              "origin": "https://identity.flickr.com",
+              "x-amz-target": "AWSCognitoIdentityProviderService.InitiateAuth",
+              "x-amz-user-agent": "aws-amplify/0.1.x js"
+            }
+          }
+        },
+        {
+          "Request": {
+            "Verb": "Post",
+            "Url": "https://cognito-idp.us-east-1.amazonaws.com/",
+            "RequestObjectName": "SystemRequest",
+            "ResponseObjectName": "Global:AuthResponse",
+            "AllowRedirect": true,
+            "Content": {
+              "ContentType": "application/x-amz-json-1.1",
+              "ContentObjectName": "AuthRequestBody"
+            },
+            "ProxyIp": "%HttpProxyAddress%",
+            "ProxyPort": "%HttpProxyPort%",
+            "ProxyUser": "%HttpProxyUserName%",
+            "ProxyPassword": "%HttpProxyPassword%"
+          }
+        },
+        {
+          "Condition": {
+            "If": "!AuthResponse.StatusCode.ToString().Equals(\"OK\")",
+            "Then": {
+              "Do": [
+                { "SetItem": { "Name": "ErrorMessage", "Value": "" } },
+                { "SetItem": { "Name": "pattern", "Value": "\"message\":\"([^\"]*)\"" } },
+                { "SetItem": { "Name": "mainstring", "Value": "%{AuthResponse.Content.ToString()}%" } },
+                { "Eval": { "Expression": "ErrorMessage = Regex.Match(mainstring, pattern).Groups[1].Value" } },
+                { "Log": { "Text": "Error, %ErrorMessage%" } },
+                { "Return": { "Value": false } }
+              ]
+            }
+          }
+        },
+        { "SetItem": { "Name": "Global:AccessToken", "Value": "", "IsSecret": true } },
+        { "SetItem": { "Name": "pattern", "Value": "\"AccessToken\":\"([^\"]*)\"" } },
+        { "SetItem": { "Name": "mainstring", "Value": "%{AuthResponse.Content.ToString()}%" } },
+        {
+          "Eval": { "Expression": "AccessToken = Regex.Match(mainstring, pattern).Groups[1].Value" }
+        },
+        {
+          "Condition": {
+            "If": "AccessToken == null",
+            "Then": {
+              "Do": [
+                { "Log": { "Text": "Error, AccessToken not found" } },
+                { "Return": { "Value": false } }
+              ]
+            }
+          }
+        },
+        { "NewHttpRequest": { "ObjectName": "Global:SystemGetRequest" } },
+        {
+          "Headers": {
+            "RequestObjectName": "SystemGetRequest",
+            "AddHeaders": {
+              "Cache-Control": "no-cache",
+              "Host": "www.flickr.com"
+            }
+          }
+        },
+        {
+          "Try": {
+            "Do": [
+              {
+                "Request": {
+                  "Verb": "Get",
+                  "Url": "https://www.flickr.com/signin/auth?data=%AccessToken%&redir=https://www.flickr.com/",
+                  "SubstitutionInUrl": true,
+                  "RequestObjectName": "SystemGetRequest",
+                  "ResponseObjectName": "Global:LoginGetResponse",
+                  "AllowRedirect": true,
+                  "ProxyIp": "%HttpProxyAddress%",
+                  "ProxyPort": "%HttpProxyPort%",
+                  "ProxyUser": "%HttpProxyUserName%",
+                  "ProxyPassword": "%HttpProxyPassword%"
+                }
+              }
+            ],
+            "Catch": [
+              { "Status": { "Type": "Checking", "Percent": 80, "Message": { "Name": "LoggingInWithAccountFailed", "Parameters": ["%AssetName%", "%Exception%"] } } },
+              { "Log": { "Text": "Exception, %Exception%" } },
+              { "Throw": { "Value": "Unsuccessful Login" } }
+            ]
+          }
+        },
+        {
+          "Condition": {
+            "If": "!LoginGetResponse.StatusCode.ToString().Equals(\"OK\")",
+            "Then": {
+              "Do": [
+                { "Log": { "Text": "Unsuccessful Login" } },
+                { "Return": { "Value": false } }
+              ]
+            }
+          }
+        },
+        {
+          "Condition": {
+            "If": "LoginGetResponse.StatusCode.ToString().Equals(\"OK\")",
+            "Then": {
+              "Do": [
+                { "Log": { "Text": "Authentication successful" } },
+                { "Return": { "Value": true } }
+              ]
+            }
+          }
+        },
+        { "Status": { "Type": "Checking", "Percent": 80, "Message": { "Name": "LoggingInWithAccountFailed", "Parameters": ["%UserName%"] } }},
+        { "Return": { "Value": false } }
+      ]
+    },
+
+    {
+      "Name": "ChangeUserPassword",
+      "Do": [
+        { "SetItem": { "Name": "RequestBody", "Value": { "PreviousPassword": "%AccountPassword%", "ProposedPassword": "%NewPassword%", "AccessToken": "%AccessToken%" } } },
+        { "NewHttpRequest": { "ObjectName": "Global:SystemRequest" } },
+        {
+          "Headers": {
+            "RequestObjectName": "SystemRequest",
+            "AddHeaders": {
+              "Cache-Control": "no-cache",
+              "ContentType": "application/x-amz-json-1.1",
+              "ContentLength": "500",
+              "Host": "cognito-idp.us-east-1.amazonaws.com",
+              "origin": "https://identity.flickr.com",
+              "x-amz-target": "AWSCognitoIdentityProviderService.ChangePassword",
+              "x-amz-user-agent": "aws-amplify/0.1.x js"
+            }
+          }
+        },
+        {
+          "Try": {
+            "Do": [
+              {
+                "Request": {
+                  "Verb": "Post",
+                  "Url": "https://cognito-idp.us-east-1.amazonaws.com/",
+                  "RequestObjectName": "SystemRequest",
+                  "ResponseObjectName": "Global:SystemResponse",
+                  "AllowRedirect": true,
+                  "Content": {
+                    "ContentType": "application/x-amz-json-1.1",
+                    "ContentObjectName": "RequestBody"
+                  },
+                  "ProxyIp": "%HttpProxyAddress%",
+                  "ProxyPort": "%HttpProxyPort%",
+                  "ProxyUser": "%HttpProxyUserName%",
+                  "ProxyPassword": "%HttpProxyPassword%"
+                }
+              }
+            ],
+            "Catch": [
+              { "Status": { "Type": "Checking", "Percent": 80, "Message": { "Name": "PasswordChangeFailed", "Parameters": ["%AssetName%", "%Exception%"] } } },
+              { "Log": { "Text": "Exception,  %Exception%" } },
+              { "Throw": { "Value": "Failed to change password" } }
+            ]
+          }
+        },
+        { "Comment": { "Text": "Test the new password" } },
+        { "Function": { "Name": "Login", "Parameters": ["%AccountUserName%", "%NewPassword%"], "ResultVariable": "LoginResult" } },
+        {
+          "Condition": {
+            "If": "!LoginResult",
+            "Then": {
+              "Do": [{ "Log": { "Text": "Error, Unsuccessful Login" } }]
+            },
+            "Else": {
+              "Do": [{ "Return": { "Value": true } }]
+            }
+          }
+        },
+        { "Return": { "Value": "%LoginResult%" } }
+      ]
+    }
+  ]
+}
